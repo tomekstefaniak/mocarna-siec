@@ -5,7 +5,8 @@ import numpy as np
 
 def create_network():
     # Tworzenie grafu skierowanego
-    G = nx.DiGraph()
+    # G = nx.DiGraph() # Wersja ze skierowanym grafem
+    G = nx.Graph()
 
     # Dodanie wierzchołków (1 do 20)
     G.add_nodes_from(range(1, 21))
