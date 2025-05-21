@@ -124,7 +124,6 @@ def simulate_network_reliability(G, N, p, T_max, m, num_simulations=1000):
 
         if nx.is_connected(G_sub):
             T = calculate_delay(G_sub, N, m)
-            print(T)
             if T < T_max:
                 success_count += 1
 
