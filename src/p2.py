@@ -118,9 +118,9 @@ def simulate_network_reliability(G, N, p, T_max, m, num_simulations=1000):
                 edges_to_remove.append((u, v))
 
         G_sub.remove_edges_from(edges_to_remove)
-        calculate_actual_flow(G_sub, N)
 
         if nx.is_connected(G_sub):
+            calculate_actual_flow(G_sub, N)
             T = calculate_delay(G_sub, N, m)
             if T < T_max:
                 success_count += 1
