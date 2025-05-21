@@ -17,9 +17,9 @@ def create_network():
 
     for u, v in G.edges:
         if (u, v) in ring_edges or (v, u) in ring_edges:
-            G.edges[u, v]['capacity'] = 2000000
+            G.edges[u, v]['capacity'] = 200000000
         else:
-            G.edges[u, v]['capacity'] = 3000000
+            G.edges[u, v]['capacity'] = 300000000
         G.edges[u, v]['actual_flow'] = 0
 
     N = np.zeros((20, 20), dtype=int)
@@ -118,10 +118,13 @@ def simulate_network_reliability(G, N, p, T_max, m, num_simulations=1000):
                 edges_to_remove.append((u, v))
 
         G_sub.remove_edges_from(edges_to_remove)
-        calculate_actual_flow(G_sub, N)
+
+        if nx.is_connected(G_sub):
+            calculate_actual_flow(G_sub, N)
 
         if nx.is_connected(G_sub):
             T = calculate_delay(G_sub, N, m)
+            print(T)
             if T < T_max:
                 success_count += 1
 
@@ -132,7 +135,7 @@ def simulate_network_reliability(G, N, p, T_max, m, num_simulations=1000):
 def main():
     G, N = create_network()
     p = 0.9
-    T_max = 0.001
+    T_max = 10
     m = 1000
     num_simulations = 1000
     reliability = simulate_network_reliability(G, N, p, T_max, m, num_simulations)
