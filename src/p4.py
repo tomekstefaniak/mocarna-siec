@@ -1,3 +1,4 @@
+
 import networkx as nx
 import numpy as np
 import random
@@ -101,9 +102,9 @@ def experiment_increasing_capacity():
     G, N = create_network()
     p = 0.9
     T_max = 10
-    m = 1000
-    num_simulations = 500  # Możesz zwiększyć dla większej dokładności
-    multipliers = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 5]
+    m = 500
+    num_simulations = 1000  # Możesz zwiększyć dla większej dokładności
+    multipliers = [0.5, 0.75, 1, 1.5, 2, 3, 5]
     results = []
 
     print("Mnożnik przepustowości | Niezawodność Pr[T < T_max]")

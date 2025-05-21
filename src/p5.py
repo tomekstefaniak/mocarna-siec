@@ -2,6 +2,7 @@
 import networkx as nx
 import numpy as np
 import random
+from tabulate import tabulate
 
 def create_network():
     G = nx.Graph()
@@ -131,20 +132,72 @@ def simulate_network_reliability(G, N, p, T_max, m, num_simulations=1000):
 
     return reliability
 
+def add_random_edge(G):
+    """
+    Adds a random edge between two non-adjacent nodes in the graph.
+    The new edge's capacity is set to the average capacity of all existing edges.
+    Returns the modified graph.
+    """
+    nodes = list(G.nodes())
+    possible_edges = []
+    
+    # Find all possible edges that don't exist yet
+    for i in range(len(nodes)):
+        for j in range(i+1, len(nodes)):
+            u = nodes[i]
+            v = nodes[j]
+            if not G.has_edge(u, v):
+                possible_edges.append((u, v))
+    
+    if not possible_edges:
+        print("No possible edges to add - graph is complete!")
+        return G
+    
+    # Calculate average capacity of existing edges
+    capacities = [data['capacity'] for u, v, data in G.edges(data=True)]
+    avg_capacity = int(np.mean(capacities)) if capacities else 300000000
+    
+    # Add a random edge with average capacity
+    u, v = random.choice(possible_edges)
+    G.add_edge(u, v, capacity=avg_capacity, actual_flow=0)
+    print(f"Added new edge: ({u}, {v}) with capacity {avg_capacity} (average)")
+    return G
+
 def main():
+    # Create base network
     G, N = create_network()
+    
+    # Simulation parameters
     p = 0.9
     T_max = 10
     m = 1000
-    num_simulations = 1000
+    num_simulations = 300
     
+    # Prepare table data
+    table_headers = ["Iteration", "Edges Count", "Added Edge", "Reliability"]
+    table_data = []
+    
+    # Initial simulation
     reliability = simulate_network_reliability(G, N, p, T_max, m, num_simulations)
-    print(f"Parameters:")
-    print(f"  Edge non-failure probability (p): {p}")
-    print(f"  Maximum delay (T_max): {T_max} s")
-    print(f"  Average packet size (m): {m} bits")
-    print(f"  Number of simulations: {num_simulations}")
-    print(f"Estimated network reliability: {reliability:.4f}")
+    table_data.append([0, G.number_of_edges(), "Initial network", f"{reliability:.4f}"])
+    
+    # Run 5 iterations adding random edges and testing reliability
+    for i in range(1, 21):
+        G = add_random_edge(G)
+        reliability = simulate_network_reliability(G, N, p, T_max, m, num_simulations)
+        added_edge = list(G.edges())[-1]  # Get the last added edge
+        table_data.append([i, G.number_of_edges(), added_edge, f"{reliability:.4f}"])
+    
+    # Print beautiful table
+    print("\nNetwork Reliability Simulation Results")
+    print(f"Parameters: p={p}, T_max={T_max}, m={m}, simulations={num_simulations}")
+    print(tabulate(table_data, headers=table_headers, tablefmt="grid"))
+    
+    # # Print some network statistics
+    # print("\nFinal Network Statistics:")
+    # print(f"- Nodes: {G.number_of_nodes()}")
+    # print(f"- Edges: {G.number_of_edges()}")
+    # print(f"- Average degree: {sum(dict(G.degree()).values()) / G.number_of_nodes():.2f}")
 
 if __name__ == "__main__":
     main()
