@@ -1,4 +1,3 @@
-
 import networkx as nx
 import matplotlib.pyplot as plt
 import numpy as np
@@ -6,145 +5,135 @@ import random
 
 def create_network():
     G = nx.Graph()
-
     G.add_nodes_from(range(1, 21))
-
     ring_edges = [(i, i+1) for i in range(1, 20)] + [(20, 1)]
     G.add_edges_from(ring_edges)
-
     additional_edges = [
         (1, 11), (2, 12), (3, 13), (4, 14), (5, 15),
         (6, 16), (7, 17), (8, 18), (9, 19)
     ]
     G.add_edges_from(additional_edges)
-
-    # Przypisanie przepustowości c(e)
     for u, v in G.edges:
         if (u, v) in ring_edges or (v, u) in ring_edges:
-            G.edges[u, v]['capacity'] = 2000000  # 2 Mbps dla krawędzi pierścienia
+            G.edges[u, v]['capacity'] = 2000000
         else:
-            G.edges[u, v]['capacity'] = 3000000  # 3 Mbps dla dodatkowych krawędzi
-
-        G.edges[u, v]['actual_flow'] = 0  # Przepływ a(e) początkowo 0
-
-    # Tworzenie losowej macierzy N (20x20)
+            G.edges[u, v]['capacity'] = 3000000
+        G.edges[u, v]['actual_flow'] = 0
     N = np.zeros((20, 20), dtype=int)
     for i in range(20):
         for j in range(20):
             if i != j:
-                N[i][j] = random.randint(100, 1000)  # Losowy przepływ w pakietach/s
+                N[i][j] = random.randint(100, 1000)
             else:
-                N[i][j] = 0  # Brak przepływu dla i == j
-
-    # Obliczenie przepływów na krawędziach
+                N[i][j] = 0
     calculate_actual_flow(G, N)
-
     return G, N
 
 def calculate_actual_flow(G, N):
     """
-    Przypisuje przepływy actual_flow na krawędziach, tak aby najtańsza ścieżka
-    od i do j miała przepływ równy N[i][j].
+    Calculates edge weights as the sum of packet flows from i to j, distributing
+    flows across multiple paths while respecting edge capacity constraints.
     """
-    # Kopia grafu z wagami jako przepływy
-    G_temp = G.copy()
-    for u, v in G_temp.edges:
-        G_temp.edges[u, v]['weight'] = 0  # Początkowe wagi (przepływy) = 0
+    # Create a directed graph for flow calculations to handle undirected edges
+    G_directed = nx.DiGraph()
+    for u, v in G.edges:
+        G_directed.add_edge(u, v, capacity=G.edges[u, v]['capacity'], actual_flow=0)
+        G_directed.add_edge(v, u, capacity=G.edges[u, v]['capacity'], actual_flow=0)
 
-    # Dla każdej pary wierzchołków i, j
+    # Process each source-sink pair
     for i in range(20):
         for j in range(20):
             if i != j and N[i][j] > 0:
-                # Znajdź najkrótszą ścieżkę z i do j (Dijkstra)
-                try:
-                    path = nx.shortest_path(G_temp, i+1, j+1, weight='weight')
-                    # Przypisz przepływ N[i][j] do krawędzi na ścieżce
-                    for k in range(len(path)-1):
-                        u, v = path[k], path[k+1]
-                        # Dodaj przepływ do krawędzi (uwzględniając graf nieskierowany)
-                        if (u, v) in G_temp.edges:
-                            G_temp.edges[u, v]['weight'] += N[i][j]
-                        elif (v, u) in G_temp.edges:
-                            G_temp.edges[v, u]['weight'] += N[i][j]
-                except nx.NetworkXNoPath:
-                    continue  # Pomijamy, jeśli nie ma ścieżki
+                flow_value = N[i][j]
+                source, sink = i + 1, j + 1
 
-    # Przypisz obliczone przepływy do oryginalnego grafu
+                # Continue finding augmenting paths until flow is satisfied or no path exists
+                while flow_value > 0:
+                    try:
+                        # Find shortest path in terms of current flow to avoid saturated edges
+                        path = nx.shortest_path(G_directed, source, sink, weight='actual_flow')
+                        # Calculate residual capacity along the path
+                        residual_capacity = float('inf')
+                        for k in range(len(path) - 1):
+                            u, v = path[k], path[k + 1]
+                            residual = G_directed.edges[u, v]['capacity'] - G_directed.edges[u, v]['actual_flow']
+                            residual_capacity = min(residual_capacity, residual)
+
+                        # Allocate as much flow as possible up to flow_value
+                        flow_to_add = min(flow_value, residual_capacity)
+                        if flow_to_add <= 0:
+                            break  # No more capacity available
+
+                        # Update flows along the path
+                        for k in range(len(path) - 1):
+                            u, v = path[k], path[k + 1]
+                            G_directed.edges[u, v]['actual_flow'] += flow_to_add
+
+                        flow_value -= flow_to_add
+
+                    except nx.NetworkXNoPath:
+                        break  # No more paths available
+
+    # Aggregate flows back to undirected graph
     for u, v in G.edges:
-        if (u, v) in G_temp.edges:
-            G.edges[u, v]['actual_flow'] = G_temp.edges[u, v]['weight']
-        elif (v, u) in G_temp.edges:
-            G.edges[u, v]['actual_flow'] = G_temp.edges[v, u]['weight']
-
+        # Sum flows in both directions (u,v) and (v,u) since G is undirected
+        flow = G_directed.edges[u, v]['actual_flow'] if (u, v) in G_directed.edges else 0
+        flow += G_directed.edges[v, u]['actual_flow'] if (v, u) in G_directed.edges else 0
+        G.edges[u, v]['actual_flow'] = flow
 
 def calculate_delay(G, N, m):
     """
-    Oblicza średnie opóźnienie T według wzoru:
+    Calculates average delay T according to the formula:
     T = (1/G) * SUM_e( a(e) / (c(e)/m - a(e)) )
     """
-    G_total = np.sum(N)  # Suma wszystkich elementów macierzy N
+    G_total = np.sum(N)
     if G_total == 0:
-        return float('inf')  # Unikamy dzielenia przez 0
-
+        return float('inf')
     delay_sum = 0
     for u, v in G.edges:
-        a_e = G.edges[u, v]['actual_flow']  # Przepływ a(e) w pakietach/s
-        c_e = G.edges[u, v]['capacity']     # Przepustowość c(e) w bitach/s
-        if c_e / m <= a_e:  # Sprawdzamy, czy denominator nie jest ujemny lub zerowy
+        a_e = G.edges[u, v]['actual_flow']
+        c_e = G.edges[u, v]['capacity']
+        if c_e / m <= a_e:
             return float('inf')
         delay_sum += a_e / (c_e / m - a_e)
-
     T = (1 / G_total) * delay_sum
     return T
 
-def simulate_network_reliability(G, N, p, T_max, m, num_simulations = 1000):
+def simulate_network_reliability(G, N, p, T_max, m, num_simulations=1000):
     """
-    Szacuje niezawodność sieci metodą Monte Carlo.
-    Zwraca prawdopodobieństwo, że T < T_max w nierozspójnionej sieci.
+    Estimates network reliability using Monte Carlo simulation.
+    Returns the probability that T < T_max in a connected network.
     """
     success_count = 0
     for _ in range(num_simulations):
-        # Tworzenie podgrafu z losowo uszkodzonymi krawędziami
         G_sub = G.copy()
         edges_to_remove = []
         for u, v in G.edges:
-            if random.random() > p:  # Uszkadzamy krawędź z prawdopodobieństwem 1-p
+            if random.random() > p:
                 edges_to_remove.append((u, v))
         G_sub.remove_edges_from(edges_to_remove)
-
-        # Sprawdzamy, czy podgraf jest spójny
         if nx.is_connected(G_sub):
-            # Obliczamy opóźnienie T
             T = calculate_delay(G_sub, N, m)
             if T < T_max:
                 success_count += 1
-
-    # Prawdopodobieństwo sukcesu
     reliability = success_count / num_simulations
     return reliability
 
 def main():
-    # Parametry
     G, N = create_network()
-    p = 0.9           # Prawdopodobieństwo nieuszkodzenia krawędzi
-    T_max = 0.001     # Maksymalne dopuszczalne opóźnienie (w sekundach)
-    m = 1000          # Średnia wielkość pakietu w bitach (np. 1000 bitów)
-    num_simulations = 1000  # Liczba symulacji Monte Carlo
-
-    # Obliczenie niezawodności
+    p = 0.9
+    T_max = 0.001
+    m = 1000
+    num_simulations = 1000
     reliability = simulate_network_reliability(G, N, p, T_max, m, num_simulations)
-    
-    # Wyświetlenie wyniku
-    print(f"Parametry:")
-    print(f"  Prawdopodobieństwo nieuszkodzenia krawędzi (p): {p}")
-    print(f"  Maksymalne opóźnienie (T_max): {T_max} s")
-    print(f"  Średnia wielkość pakietu (m): {m} bitów")
-    print(f"  Liczba symulacji: {num_simulations}")
-    print(f"Oszacowana niezawodność sieci: {reliability:.4f}")
-    
-    # Opcjonalnie: oblicz T dla oryginalnej sieci
+    print(f"Parameters:")
+    print(f"  Edge non-failure probability (p): {p}")
+    print(f"  Maximum delay (T_max): {T_max} s")
+    print(f"  Average packet size (m): {m} bits")
+    print(f"  Number of simulations: {num_simulations}")
+    print(f"Estimated network reliability: {reliability:.4f}")
     T = calculate_delay(G, N, m)
-    print(f"Średnie opóźnienie w oryginalnej sieci (T): {T:.6f} s")
+    print(f"Average delay in original network (T): {T:.6f} s")
 
 if __name__ == "__main__":
-    main()  
+    main()
